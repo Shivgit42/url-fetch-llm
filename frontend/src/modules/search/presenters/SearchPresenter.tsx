@@ -135,12 +135,6 @@ function SearchPresenter() {
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleSearch();
-    }
-  };
-
   const handleRecentClick = (item: { title?: string; url: string }) => {
     const queryValue = item.title?.trim() || item.url;
     if (!queryValue) return;
