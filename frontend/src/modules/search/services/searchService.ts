@@ -1,4 +1,4 @@
-import axios from "axios";
+import api from "../../shared/api";
 
 export interface SearchPayload {
   query: string;
@@ -31,14 +31,14 @@ export interface RecentResponse {
 }
 
 export function performSearch(payload: SearchPayload) {
-  return axios.post<SearchResponse>("/api/search", payload);
+  return api.post<SearchResponse>("/api/search", payload);
 }
 
 export function fetchTypes() {
-  return axios.get<TypesResponse>("/api/types");
+  return api.get<TypesResponse>("/api/types");
 }
 
 export function fetchRecentUrls() {
-  return axios.get<RecentResponse>("/api/recent-urls");
+  return api.get<RecentResponse>("/api/recent-urls");
 }
 

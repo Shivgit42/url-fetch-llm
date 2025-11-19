@@ -1,4 +1,4 @@
-import axios from "axios";
+import api from "../../shared/api";
 
 export interface UploadResponse {
   message: string;
@@ -22,10 +22,9 @@ export interface StatusResponse {
 }
 
 export function uploadCsv(payload: { csvContent: string; fileName?: string }) {
-  return axios.post<UploadResponse>("/api/upload", payload);
+  return api.post<UploadResponse>("/api/upload", payload);
 }
 
 export function fetchProcessingStatus() {
-  return axios.get<StatusResponse>("/api/status");
+  return api.get<StatusResponse>("/api/status");
 }
-
