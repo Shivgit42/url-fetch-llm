@@ -5,32 +5,39 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc --project tsconfig.json",
     "start": "node dist/index.js",
-    "worker": "tsx watch src/worker.ts"
+    "worker": "tsx watch src/worker.ts",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings=0"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "pg": "^8.11.3",
-    "bull": "^4.12.0",
-    "redis": "^4.6.10",
+    "@mozilla/readability": "^0.4.4",
     "@pinecone-database/pinecone": "^2.0.1",
     "axios": "^1.6.2",
-    "@mozilla/readability": "^0.4.4",
-    "jsdom": "^23.0.1",
+    "bull": "^4.12.0",
+    "cors": "^2.8.5",
     "csv-parse": "^5.5.3",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsdom": "^23.0.1",
+    "pg": "^8.11.3",
+    "redis": "^4.6.10"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
+    "@eslint/js": "^9.39.1",
+    "@types/bull": "^4.10.0",
     "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsdom": "^21.1.6",
     "@types/node": "^20.10.5",
     "@types/pg": "^8.10.9",
-    "@types/bull": "^4.10.0",
-    "@types/jsdom": "^21.1.6",
+    "@typescript-eslint/eslint-plugin": "^8.47.0",
+    "@typescript-eslint/parser": "^8.47.0",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.5.0",
+    "tsx": "^4.7.0",
     "typescript": "^5.3.3",
-    "tsx": "^4.7.0"
+    "typescript-eslint": "^8.47.0"
   }
 }
-
