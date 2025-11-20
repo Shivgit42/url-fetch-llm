@@ -1,3 +1,10 @@
+// Load environment variables from .env file
+require("dotenv").config({ path: require("path").join(__dirname, ".env") });
+
+// Get all environment variables (includes .env + system env)
+// PM2 will pass these to the child processes
+const envVars = { ...process.env };
+
 module.exports = {
   apps: [
     {
@@ -8,11 +15,13 @@ module.exports = {
       exec_mode: "fork",
       env: {
         NODE_ENV: "production",
-        PORT: 5001,
+        PORT: envVars.PORT || 5001,
+        ...envVars, // Spread all .env variables
       },
       env_development: {
         NODE_ENV: "development",
-        PORT: 5001,
+        PORT: envVars.PORT || 5001,
+        ...envVars, // Spread all .env variables
       },
       error_file: "./logs/api-error.log",
       out_file: "./logs/api-out.log",
@@ -34,9 +43,11 @@ module.exports = {
       exec_mode: "fork",
       env: {
         NODE_ENV: "production",
+        ...envVars, // Spread all .env variables
       },
       env_development: {
         NODE_ENV: "development",
+        ...envVars, // Spread all .env variables
       },
       error_file: "./logs/worker-error.log",
       out_file: "./logs/worker-out.log",
