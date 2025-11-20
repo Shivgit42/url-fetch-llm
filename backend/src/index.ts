@@ -100,15 +100,28 @@ async function startServer() {
   const bootStarted = Date.now();
   try {
     log("Initializing services: database, pinecone");
-    await Promise.all([initDatabase(), initPinecone()]);
-    log("Services initialized successfully");
+    
+    // Initialize database (required)
+    await initDatabase();
+    log("Database initialized successfully");
+    
+    // Initialize Pinecone (optional - won't crash if it fails)
+    const pineconeInitialized = await initPinecone();
+    if (pineconeInitialized) {
+      log("Pinecone initialized successfully");
+    } else {
+      log("Pinecone initialization skipped or failed - vector search will be disabled");
+    }
 
     app.listen(PORT, () => {
       const duration = Date.now() - bootStarted;
       log(`Server listening on port ${PORT} (ready in ${duration}ms)`);
+      if (!pineconeInitialized) {
+        log("Note: Vector search is disabled. Set PINECONE_API_KEY to enable.");
+      }
     });
-  } catch (error) {
-    log("Failed to start server", error);
+  } catch (error: any) {
+    log("Failed to start server", error.message || error);
     process.exit(1);
   }
 }

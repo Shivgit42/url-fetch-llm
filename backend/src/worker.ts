@@ -150,10 +150,15 @@ async function startWorker() {
     await initDatabase();
     log("Database connection: OK");
 
-    // Initialize Pinecone (if configured)
+    // Initialize Pinecone (if configured) - optional, won't crash if it fails
+    let pineconeInitialized = false;
     if (hasPineconeKey) {
-      await initPinecone();
-      log("Pinecone connection: OK");
+      pineconeInitialized = await initPinecone();
+      if (pineconeInitialized) {
+        log("Pinecone connection: OK");
+      } else {
+        log("Pinecone: Initialization failed - vector sync will be disabled");
+      }
     } else {
       log("Pinecone: Skipped (no API key)");
     }
@@ -162,7 +167,7 @@ async function startWorker() {
     log(`Worker ready (started in ${duration}ms)`);
     log(`Processing up to 10 jobs concurrently`);
     log(`Embedding: ${hasEmbeddingKey ? "Enabled" : "Disabled (no API key)"}`);
-    log(`Pinecone: ${hasPineconeKey ? "Enabled" : "Disabled (no API key)"}`);
+    log(`Pinecone: ${pineconeInitialized ? "Enabled" : "Disabled (no API key or initialization failed)"}`);
   } catch (error: any) {
     log(`Failed to start worker: ${error.message}`);
     process.exit(1);
