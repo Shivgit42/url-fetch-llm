@@ -109,15 +109,16 @@ async function startServer() {
     const pineconeInitialized = await initPinecone();
     if (pineconeInitialized) {
       log("Pinecone initialized successfully");
-    } else {
-      log("Pinecone initialization skipped or failed - vector search will be disabled");
     }
+    // If Pinecone failed, initPinecone already logged a brief message
 
     app.listen(PORT, () => {
       const duration = Date.now() - bootStarted;
       log(`Server listening on port ${PORT} (ready in ${duration}ms)`);
-      if (!pineconeInitialized) {
-        log("Note: Vector search is disabled. Set PINECONE_API_KEY to enable.");
+      if (pineconeInitialized) {
+        log("Vector search: Enabled");
+      } else {
+        log("Vector search: Disabled (optional feature)");
       }
     });
   } catch (error: any) {

@@ -1,5 +1,14 @@
 // Load environment variables from .env file
-require("dotenv").config({ path: require("path").join(__dirname, ".env") });
+const path = require("path");
+const fs = require("fs");
+const envPath = path.join(__dirname, ".env");
+
+if (fs.existsSync(envPath)) {
+  require("dotenv").config({ path: envPath });
+  console.log("[PM2] Loaded .env file");
+} else {
+  console.warn("[PM2] Warning: .env file not found at", envPath);
+}
 
 // Get all environment variables (includes .env + system env)
 // PM2 will pass these to the child processes

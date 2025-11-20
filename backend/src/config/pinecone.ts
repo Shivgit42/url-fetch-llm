@@ -48,8 +48,13 @@ export async function initPinecone(): Promise<boolean> {
     }
     return true;
   } catch (error: any) {
-    console.warn(`[pinecone] Initialization failed: ${error.message}`);
-    console.warn("[pinecone] Pinecone features will be disabled. Server will continue without vector search.");
+    // Only log a brief message - Pinecone is optional
+    const errorMsg = error.message || "Unknown error";
+    if (errorMsg.includes("API key") || errorMsg.includes("rejected")) {
+      console.log("[pinecone] API key invalid or missing - vector search disabled (optional feature)");
+    } else {
+      console.log(`[pinecone] Initialization failed - vector search disabled: ${errorMsg.substring(0, 100)}`);
+    }
     return false;
   }
 }
