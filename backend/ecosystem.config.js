@@ -1,0 +1,55 @@
+module.exports = {
+  apps: [
+    {
+      name: "url-fetch-llm-api",
+      script: "./dist/index.js",
+      cwd: __dirname,
+      instances: 1,
+      exec_mode: "fork",
+      env: {
+        NODE_ENV: "production",
+        PORT: 5001,
+      },
+      env_development: {
+        NODE_ENV: "development",
+        PORT: 5001,
+      },
+      error_file: "./logs/api-error.log",
+      out_file: "./logs/api-out.log",
+      log_file: "./logs/api-combined.log",
+      time: true,
+      merge_logs: true,
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: "10s",
+      max_memory_restart: "1G",
+      watch: false,
+      ignore_watch: ["node_modules", "logs", "dist"],
+    },
+    {
+      name: "url-fetch-llm-worker",
+      script: "./dist/worker.js",
+      cwd: __dirname,
+      instances: 1,
+      exec_mode: "fork",
+      env: {
+        NODE_ENV: "production",
+      },
+      env_development: {
+        NODE_ENV: "development",
+      },
+      error_file: "./logs/worker-error.log",
+      out_file: "./logs/worker-out.log",
+      log_file: "./logs/worker-combined.log",
+      time: true,
+      merge_logs: true,
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: "10s",
+      max_memory_restart: "1G",
+      watch: false,
+      ignore_watch: ["node_modules", "logs", "dist"],
+    },
+  ],
+};
+
