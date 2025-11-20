@@ -1,5 +1,6 @@
 import { generateEmbedding } from "../../services/embedding";
 import { pinecone, PINECONE_INDEX_NAME } from "../../config/pinecone";
+import { pool } from "../../config/database";
 
 interface SearchCriteria {
   query: string;
@@ -11,10 +12,45 @@ interface SearchCriteria {
 
 const MAX_TOP_K = 1000;
 const MIN_SEMANTIC_SCORE = 0.55;
+const hasEmbeddingKey = Boolean(
+  process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY
+);
+const hasPineconeKey = Boolean(process.env.PINECONE_API_KEY);
 
 export async function executeSearch(criteria: SearchCriteria) {
   const { query, types, perPage, page, typeFilterText } = criteria;
-  const queryEmbedding = await generateEmbedding(query);
+
+  const canUseVector = hasEmbeddingKey && hasPineconeKey;
+  let queryEmbedding: number[] | null = null;
+
+  if (!canUseVector) {
+    console.warn(
+      `[search] Falling back to text search (embeddingKey=${hasEmbeddingKey}, pineconeKey=${hasPineconeKey})`
+    );
+    return fallbackTextSearch({
+      query,
+      types,
+      perPage,
+      page,
+      typeFilterText,
+      reason: "Vector search disabled (missing API key)",
+    });
+  }
+
+  try {
+    queryEmbedding = await generateEmbedding(query);
+  } catch (error: any) {
+    console.warn(`[search] Semantic search unavailable: ${error.message}`);
+    return fallbackTextSearch({
+      query,
+      types,
+      perPage,
+      page,
+      typeFilterText,
+      reason: error.message || "Semantic search unavailable",
+    });
+  }
+
   const index = pinecone.index(PINECONE_INDEX_NAME);
 
   const filter: Record<string, any> = {};
@@ -153,6 +189,120 @@ export async function executeSearch(criteria: SearchCriteria) {
       page,
       perPage,
       totalAvailable: filteredResults.length,
+    },
+  };
+}
+
+async function fallbackTextSearch(
+  criteria: SearchCriteria & { reason?: string }
+) {
+  const { query, types, perPage, page, typeFilterText, reason } = criteria;
+  const normalizedQuery = query.trim();
+  const whereClauses = ["status = 'completed'"];
+  const whereParams: any[] = [];
+
+  if (normalizedQuery) {
+    const paramIndex = whereParams.length + 1;
+    whereClauses.push(
+      `(COALESCE(title, '') ILIKE $${paramIndex} OR url ILIKE $${paramIndex} OR COALESCE(contentPreview, '') ILIKE $${paramIndex})`
+    );
+    whereParams.push(`%${normalizedQuery}%`);
+  }
+
+  if (types && types.length > 0) {
+    const paramIndex = whereParams.length + 1;
+    whereClauses.push(`type = ANY($${paramIndex})`);
+    whereParams.push(types);
+  }
+
+  const baseWhere =
+    whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+  const offset = (page - 1) * perPage;
+  const limitParamIndex = whereParams.length + 1;
+  const offsetParamIndex = whereParams.length + 2;
+
+  const [rowsResult, countResult] = await Promise.all([
+    pool.query(
+      `SELECT id, url, type, title, contentPreview, updated_at
+       FROM urls
+       ${baseWhere}
+       ORDER BY updated_at DESC NULLS LAST
+       LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}`,
+      [...whereParams, perPage, offset]
+    ),
+    pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM urls
+       ${baseWhere}`,
+      whereParams
+    ),
+  ]);
+
+  const now = new Date();
+  const queryLower = normalizedQuery.toLowerCase();
+  const filterValue = typeFilterText?.trim().toLowerCase();
+
+  const scoredResults = rowsResult.rows.map((row) => {
+    const title = row.title || row.url;
+    const snippet = row.contentpreview || "";
+    const titleLower = title.toLowerCase();
+    const urlLower = row.url.toLowerCase();
+    const snippetLower = snippet.toLowerCase();
+
+    let score = 0.35;
+    if (titleLower.includes(queryLower)) score += 0.35;
+    if (urlLower.includes(queryLower)) score += 0.2;
+    if (snippetLower.includes(queryLower)) score += 0.15;
+
+    let recencyBoost = 0;
+    if (row.updated_at) {
+      const updatedAt = new Date(row.updated_at);
+      const hoursSinceUpdate =
+        (now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60);
+      if (!Number.isNaN(hoursSinceUpdate) && hoursSinceUpdate < 72) {
+        recencyBoost = Math.max(0, 0.2 * (1 - hoursSinceUpdate / 72));
+      }
+    }
+    score = Math.min(score + recencyBoost, 1);
+
+    return {
+      id: row.id?.toString?.() ?? String(row.id),
+      url: row.url,
+      type: row.type,
+      title,
+      snippet,
+      score,
+      originalScore: score - recencyBoost,
+      recencyBoost,
+    };
+  });
+
+  const filteredResults = filterValue
+    ? scoredResults.filter((result) => {
+        return (
+          (result.type || "").toLowerCase().includes(filterValue) ||
+          result.url.toLowerCase().includes(filterValue) ||
+          (result.title || "").toLowerCase().includes(filterValue)
+        );
+      })
+    : scoredResults;
+
+  const startIndex = (page - 1) * perPage;
+  const paginatedResults = filteredResults.slice(
+    startIndex,
+    startIndex + perPage
+  );
+
+  return {
+    results: paginatedResults,
+    meta: {
+      page,
+      perPage,
+      totalAvailable: countResult.rows[0]?.count || filteredResults.length,
+      degraded: true,
+      reason:
+        reason ||
+        "Vector search unavailable (missing embedding or Pinecone API key). Returned text-based matches.",
     },
   };
 }
