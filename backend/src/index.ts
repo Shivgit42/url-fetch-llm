@@ -11,11 +11,16 @@ import typesRouter from "./routes/types";
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 const log = (...args: unknown[]) =>
   console.info(new Date().toISOString(), "-", ...args);
 
-app.use(cors());
+app.use(
+  cors({
+    origin: "http://localhost:3050",
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -66,4 +71,4 @@ async function startServer() {
   }
 }
 
-startServer();
+void startServer();

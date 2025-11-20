@@ -2,10 +2,13 @@ import dotenv from "dotenv";
 import { urlQueue } from "./config/queue";
 import { extractContentFromUrl } from "./services/contentExtractor";
 import { generateEmbedding } from "./services/embedding";
-import { pool } from "./config/database";
-import { pinecone, PINECONE_INDEX_NAME } from "./config/pinecone";
+import { pool, initDatabase } from "./config/database";
+import { pinecone, PINECONE_INDEX_NAME, initPinecone } from "./config/pinecone";
 
 dotenv.config();
+
+const log = (...args: unknown[]) =>
+  console.info(new Date().toISOString(), "[worker]", ...args);
 
 interface JobData {
   url: string;
@@ -20,15 +23,14 @@ const hasPineconeKey = Boolean(process.env.PINECONE_API_KEY);
 
 urlQueue.process(10, async (job) => {
   const { url, type }: JobData = job.data;
+  log(`Processing job: ${url} (type: ${type})`);
 
   try {
     let content;
     try {
       content = await extractContentFromUrl(url);
     } catch (error: any) {
-      console.warn(
-        `[worker] Failed to fetch ${url}: ${error.message}. Using fallback content.`
-      );
+      log(`Failed to fetch ${url}: ${error.message}. Using fallback content.`);
       content = {
         title: url,
         textContent: `Content temporarily unavailable for ${url}`,
@@ -48,14 +50,10 @@ urlQueue.process(10, async (job) => {
       try {
         embedding = await generateEmbedding(embeddingText);
       } catch (error: any) {
-        console.warn(
-          `[worker] Embedding generation skipped for ${url}: ${error.message}`
-        );
+        log(`Embedding generation skipped for ${url}: ${error.message}`);
       }
     } else {
-      console.warn(
-        `[worker] Skipping embedding generation for ${url}: no API key configured`
-      );
+      log(`Skipping embedding generation for ${url}: no API key configured`);
     }
 
     await pool.query(
@@ -97,19 +95,17 @@ urlQueue.process(10, async (job) => {
           },
         ]);
       } catch (error: any) {
-        console.warn(
-          `[worker] Failed to upsert ${url} to Pinecone: ${error.message}`
-        );
+        log(`Failed to upsert ${url} to Pinecone: ${error.message}`);
       }
     } else if (!hasPineconeKey) {
-      console.warn(
-        `[worker] Skipping Pinecone sync for ${url}: no PINECONE_API_KEY configured`
-      );
+      log(`Skipping Pinecone sync for ${url}: no PINECONE_API_KEY configured`);
     }
 
-    return { success: true, url, vectorSynced: Boolean(embedding && hasPineconeKey) };
+    const result = { success: true, url, vectorSynced: Boolean(embedding && hasPineconeKey) };
+    log(`Job completed successfully: ${url}${result.vectorSynced ? " (vector synced)" : ""}`);
+    return result;
   } catch (error: any) {
-    console.error(`[worker] Job failed for ${url}: ${error.message}`);
+    log(`Job failed for ${url}: ${error.message}`);
     try {
       await pool.query(
         `UPDATE urls 
@@ -123,21 +119,72 @@ urlQueue.process(10, async (job) => {
   }
 });
 
-urlQueue.on("completed", () => {});
-urlQueue.on("failed", () => {});
-urlQueue.on("stalled", () => {});
-urlQueue.on("error", () => {});
+urlQueue.on("completed", (job) => {
+  log(`Job completed: ${job.data.url}`);
+});
+urlQueue.on("failed", (job, err) => {
+  log(`Job failed: ${job?.data?.url || "unknown"} - ${err.message}`);
+});
+urlQueue.on("stalled", (job) => {
+  log(`Job stalled: ${job?.data?.url || "unknown"}`);
+});
+urlQueue.on("error", (error) => {
+  log(`Queue error: ${error.message}`);
+});
 
+async function startWorker() {
+  const bootStarted = Date.now();
+  try {
+    log("Initializing worker services: database, pinecone, redis");
+    
+    // Test Redis connection
+    try {
+      await urlQueue.getWaitingCount();
+      log("Redis connection: OK");
+    } catch (error: any) {
+      log(`Redis connection failed: ${error.message}`);
+      throw error;
+    }
+
+    // Initialize database
+    await initDatabase();
+    log("Database connection: OK");
+
+    // Initialize Pinecone (if configured)
+    if (hasPineconeKey) {
+      await initPinecone();
+      log("Pinecone connection: OK");
+    } else {
+      log("Pinecone: Skipped (no API key)");
+    }
+
+    const duration = Date.now() - bootStarted;
+    log(`Worker ready (started in ${duration}ms)`);
+    log(`Processing up to 10 jobs concurrently`);
+    log(`Embedding: ${hasEmbeddingKey ? "Enabled" : "Disabled (no API key)"}`);
+    log(`Pinecone: ${hasPineconeKey ? "Enabled" : "Disabled (no API key)"}`);
+  } catch (error: any) {
+    log(`Failed to start worker: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+// Health check interval
 setInterval(async () => {
   try {
-    await Promise.all([
+    const [waiting, active, completed, failed] = await Promise.all([
       urlQueue.getWaitingCount(),
       urlQueue.getActiveCount(),
       urlQueue.getCompletedCount(),
       urlQueue.getFailedCount(),
     ]);
-  } catch {}
-}, 10000);
+    log(`Queue stats - Waiting: ${waiting}, Active: ${active}, Completed: ${completed}, Failed: ${failed}`);
+  } catch (error: any) {
+    log(`Health check error: ${error.message}`);
+  }
+}, 30000); // Every 30 seconds
+
+void startWorker();
 
 export {};
 

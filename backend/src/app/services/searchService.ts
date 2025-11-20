@@ -17,6 +17,29 @@ const hasEmbeddingKey = Boolean(
 );
 const hasPineconeKey = Boolean(process.env.PINECONE_API_KEY);
 
+/**
+ * Normalizes a string for fuzzy matching by:
+ * - Converting to lowercase
+ * - Replacing hyphens, underscores, and other separators with spaces
+ * - Normalizing multiple spaces to single space
+ * - Trimming
+ */
+function normalizeForMatching(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[-_./\\]/g, " ") // Replace separators with spaces
+    .replace(/\s+/g, " ") // Normalize multiple spaces
+    .trim();
+}
+
+/**
+ * Checks if normalized query matches normalized text (handles hyphens, spaces, etc.)
+ */
+function normalizedIncludes(normalizedQuery: string, text: string): boolean {
+  const normalizedText = normalizeForMatching(text);
+  return normalizedText.includes(normalizedQuery);
+}
+
 export async function executeSearch(criteria: SearchCriteria) {
   const { query, types, perPage, page, typeFilterText } = criteria;
 
@@ -72,6 +95,7 @@ export async function executeSearch(criteria: SearchCriteria) {
 
   const now = new Date();
   const queryLower = query.toLowerCase();
+  const normalizedQuery = normalizeForMatching(query);
 
   const matches = queryResponse.matches || [];
 
@@ -94,33 +118,42 @@ export async function executeSearch(criteria: SearchCriteria) {
 
       const titleLower = (metadata.title || "").toLowerCase();
       const urlLower = metadata.url.toLowerCase();
+      
+      // Use normalized matching for better URL/title matching (handles hyphens, spaces, etc.)
       const hasTextMatch =
-        titleLower.includes(queryLower) || urlLower.includes(queryLower);
+        normalizedIncludes(normalizedQuery, metadata.title || "") ||
+        normalizedIncludes(normalizedQuery, metadata.url) ||
+        titleLower.includes(queryLower) ||
+        urlLower.includes(queryLower);
       const meetsSemanticThreshold = originalScore >= MIN_SEMANTIC_SCORE;
 
       if (!meetsSemanticThreshold && !hasTextMatch) {
         return null;
       }
 
-      if (titleLower.includes(queryLower)) {
+      if (normalizedIncludes(normalizedQuery, metadata.title || "") || titleLower.includes(queryLower)) {
         boostedScore += 0.15;
       }
 
-      const titleWords = titleLower.split(/\s+/);
-      const queryWords = queryLower.split(/\s+/);
+      const normalizedTitle = normalizeForMatching(metadata.title || "");
+      const titleWords = normalizedTitle.split(/\s+/);
+      const queryWords = normalizedQuery.split(/\s+/);
       const isExactMatch =
-        titleLower === queryLower ||
-        titleLower.startsWith(queryLower) ||
+        normalizedTitle === normalizedQuery ||
+        normalizedTitle.startsWith(normalizedQuery) ||
         titleWords[0] === queryWords[0];
 
       if (isExactMatch) {
         boostedScore += 0.25;
       }
 
-      if (urlLower.includes(queryLower)) {
+      const normalizedUrl = normalizeForMatching(metadata.url);
+      if (normalizedIncludes(normalizedQuery, metadata.url) || urlLower.includes(queryLower)) {
         boostedScore += 0.1;
         const urlPath = urlLower.split("?")[0];
+        const normalizedUrlPath = normalizeForMatching(urlPath);
         if (
+          normalizedUrlPath.includes(normalizedQuery) ||
           urlPath.includes(`/${queryLower}`) ||
           urlPath.includes(`/${queryLower}/`)
         ) {
@@ -198,16 +231,31 @@ async function fallbackTextSearch(
 ) {
   const { query, types, perPage, page, typeFilterText, reason } = criteria;
   const normalizedQuery = query.trim();
-  const whereClauses = ["status = 'completed'"];
+  
+  // Try completed first, but if no results and query is provided, also check pending
+  const whereClauses: string[] = [];
   const whereParams: any[] = [];
 
   if (normalizedQuery) {
     const paramIndex = whereParams.length + 1;
+    // Search with original query and normalized version (hyphens/underscores as spaces)
+    // The scoring logic will do precise normalized matching
+    const normalizedQueryForSql = normalizedQuery.replace(/[-_]/g, " ");
     whereClauses.push(
-      `(COALESCE(title, '') ILIKE $${paramIndex} OR url ILIKE $${paramIndex} OR COALESCE(contentPreview, '') ILIKE $${paramIndex})`
+      `(
+        COALESCE(title, '') ILIKE $${paramIndex} OR 
+        url ILIKE $${paramIndex} OR 
+        COALESCE(contentPreview, '') ILIKE $${paramIndex} OR 
+        COALESCE(type, '') ILIKE $${paramIndex} OR
+        COALESCE(title, '') ILIKE $${paramIndex + 1} OR 
+        url ILIKE $${paramIndex + 1}
+      )`
     );
-    whereParams.push(`%${normalizedQuery}%`);
+    whereParams.push(`%${normalizedQuery}%`, `%${normalizedQueryForSql}%`);
   }
+
+  // Prefer completed URLs, but include pending if no completed matches
+  // We'll handle this in the query by ordering by status
 
   if (types && types.length > 0) {
     const paramIndex = whereParams.length + 1;
@@ -217,29 +265,32 @@ async function fallbackTextSearch(
 
   const baseWhere =
     whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
-  const offset = (page - 1) * perPage;
-  const limitParamIndex = whereParams.length + 1;
-  const offsetParamIndex = whereParams.length + 2;
+  
+  // Fetch all matching results (up to a reasonable limit) for scoring and filtering
+  // Then paginate in memory after scoring/sorting
+  const MAX_FETCH = 10000; // Reasonable upper limit
+  
+  const querySql = `SELECT id, url, type, title, contentPreview, updated_at, status
+       FROM urls
+       ${baseWhere || "WHERE 1=1"}
+       ORDER BY 
+         CASE WHEN status = 'completed' THEN 1 
+              WHEN status = 'pending' THEN 2 
+              ELSE 3 END,
+         updated_at DESC NULLS LAST
+       LIMIT ${MAX_FETCH}`;
+  
+  console.log("[search] Fallback text search query:", querySql);
+  console.log("[search] Query params:", whereParams);
+  console.log("[search] Search criteria:", { query: normalizedQuery, types, typeFilterText });
 
-  const [rowsResult, countResult] = await Promise.all([
-    pool.query(
-      `SELECT id, url, type, title, contentPreview, updated_at
-       FROM urls
-       ${baseWhere}
-       ORDER BY updated_at DESC NULLS LAST
-       LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}`,
-      [...whereParams, perPage, offset]
-    ),
-    pool.query(
-      `SELECT COUNT(*)::int AS count
-       FROM urls
-       ${baseWhere}`,
-      whereParams
-    ),
-  ]);
+  const rowsResult = await pool.query(querySql, whereParams);
+  
+  console.log("[search] Found rows:", rowsResult.rows.length);
 
   const now = new Date();
   const queryLower = normalizedQuery.toLowerCase();
+  const normalizedQueryForMatch = normalizeForMatching(normalizedQuery);
   const filterValue = typeFilterText?.trim().toLowerCase();
 
   const scoredResults = rowsResult.rows.map((row) => {
@@ -250,9 +301,21 @@ async function fallbackTextSearch(
     const snippetLower = snippet.toLowerCase();
 
     let score = 0.35;
-    if (titleLower.includes(queryLower)) score += 0.35;
-    if (urlLower.includes(queryLower)) score += 0.2;
-    if (snippetLower.includes(queryLower)) score += 0.15;
+    if (normalizedQuery) {
+      // Use normalized matching for better URL/title matching (handles hyphens, spaces, etc.)
+      const hasNormalizedTitleMatch = normalizedIncludes(normalizedQueryForMatch, title);
+      const hasNormalizedUrlMatch = normalizedIncludes(normalizedQueryForMatch, row.url);
+      const hasNormalizedSnippetMatch = normalizedIncludes(normalizedQueryForMatch, snippet);
+      
+      // Also check regular lowercase matching for backward compatibility
+      const hasTitleMatch = titleLower.includes(queryLower);
+      const hasUrlMatch = urlLower.includes(queryLower);
+      const hasSnippetMatch = snippetLower.includes(queryLower);
+      
+      if (hasNormalizedTitleMatch || hasTitleMatch) score += 0.35;
+      if (hasNormalizedUrlMatch || hasUrlMatch) score += 0.2;
+      if (hasNormalizedSnippetMatch || hasSnippetMatch) score += 0.15;
+    }
 
     let recencyBoost = 0;
     if (row.updated_at) {
@@ -277,6 +340,15 @@ async function fallbackTextSearch(
     };
   });
 
+  // Sort by score (highest first)
+  scoredResults.sort((a, b) => {
+    if (Math.abs(b.score - a.score) > 0.001) {
+      return b.score - a.score;
+    }
+    return (b.originalScore || 0) - (a.originalScore || 0);
+  });
+
+  // Apply typeFilterText if provided
   const filteredResults = filterValue
     ? scoredResults.filter((result) => {
         return (
@@ -287,6 +359,7 @@ async function fallbackTextSearch(
       })
     : scoredResults;
 
+  // Paginate after scoring and filtering
   const startIndex = (page - 1) * perPage;
   const paginatedResults = filteredResults.slice(
     startIndex,
@@ -298,7 +371,7 @@ async function fallbackTextSearch(
     meta: {
       page,
       perPage,
-      totalAvailable: countResult.rows[0]?.count || filteredResults.length,
+      totalAvailable: filteredResults.length,
       degraded: true,
       reason:
         reason ||
