@@ -27,7 +27,6 @@ export async function initPinecone(): Promise<boolean> {
     );
 
     if (!indexExists) {
-      console.log(`[pinecone] Creating index: ${PINECONE_INDEX_NAME}`);
       await pinecone.createIndex({
         name: PINECONE_INDEX_NAME,
         dimension: 1536,
@@ -39,19 +38,10 @@ export async function initPinecone(): Promise<boolean> {
           },
         },
       });
-      console.log(`[pinecone] Index created successfully`);
-    } else {
-      console.log(`[pinecone] Index ${PINECONE_INDEX_NAME} already exists`);
     }
     return true;
   } catch (error: any) {
-    // Only log a brief message - Pinecone is optional
-    const errorMsg = error.message || "Unknown error";
-    if (errorMsg.includes("API key") || errorMsg.includes("rejected")) {
-      console.log("[pinecone] API key invalid or missing - vector search disabled (optional feature)");
-    } else {
-      console.log(`[pinecone] Initialization failed - vector search disabled: ${errorMsg.substring(0, 100)}`);
-    }
+    // Pinecone is optional, fail silently
     return false;
   }
 }
