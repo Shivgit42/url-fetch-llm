@@ -43,7 +43,7 @@ function ResultsSection({
         </h3>
       </div>
       <div className="flex flex-col gap-5">
-        {results.map((result) => (
+        {results.slice(0, resultCount).filter(r => r != null).map((result) => (
           <div
             key={result.id}
             className="p-6 border border-slate-200 rounded-2xl transition-all duration-200 hover:shadow-[0_15px_50px_rgba(15,23,42,0.12)] hover:border-sky-200 bg-white text-slate-900"
@@ -120,11 +120,17 @@ function ResultsSection({
           Showing
           <span className="text-sky-500">
             {" "}
-            {startResult}-{endResult}{" "}
+            {results.length > 0 ? startResult : 0}-{endResult}{" "}
           </span>
-          of approximately
-          <span className="text-sky-500"> {totalAvailable} </span>
-          results
+          of
+          <span className="text-sky-500"> {results.length} </span>
+          {results.length === 1 ? "result" : "results"}
+          {totalAvailable > results.length && (
+            <span className="text-slate-500">
+              {" "}
+              (out of {totalAvailable} total available)
+            </span>
+          )}
         </div>
         <div className="flex items-center justify-center gap-4">
           <button
