@@ -12,7 +12,6 @@ import {
   fetchRecentUrls,
 } from "../services/searchService";
 
-const MAX_RESULTS = 200;
 const MIN_RESULTS = 1;
 
 function SearchPresenter() {
@@ -23,8 +22,8 @@ function SearchPresenter() {
   const [results, setResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [resultCount, setResultCount] = useState<number>(20);
-  const [resultCountInput, setResultCountInput] = useState<string>("20");
+  const [resultCount, setResultCount] = useState<number>(0);
+  const [resultCountInput, setResultCountInput] = useState<string>("");
   const [page, setPage] = useState<number>(1);
   const [totalAvailable, setTotalAvailable] = useState<number>(0);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
@@ -67,20 +66,20 @@ function SearchPresenter() {
   };
 
   const clampResultCount = (value: number) =>
-    Math.min(Math.max(value || MIN_RESULTS, MIN_RESULTS), MAX_RESULTS);
+    Math.max(value || MIN_RESULTS, MIN_RESULTS);
 
   const handleResultInputChange = (rawValue: string) => {
     const digitsOnly = rawValue.replace(/\D/g, "");
     setResultCountInput(digitsOnly);
 
     if (digitsOnly === "") {
-      setResultCount(MIN_RESULTS);
+      setResultCount(0);
       setPage(1);
       return;
     }
 
     const numericValue = Number(digitsOnly);
-    if (!Number.isNaN(numericValue)) {
+    if (!Number.isNaN(numericValue) && numericValue > 0) {
       const clamped = clampResultCount(numericValue);
       setResultCount(clamped);
       if (clamped !== numericValue) {
@@ -107,6 +106,11 @@ function SearchPresenter() {
       return;
     }
 
+    if (!resultCount || resultCount < MIN_RESULTS) {
+      setError("Please enter the number of results to display.");
+      return;
+    }
+
     const safeCount = clampResultCount(resultCount);
     const targetPage = pageOverride ?? 1;
     setSearching(true);
@@ -121,10 +125,47 @@ function SearchPresenter() {
         typeFilterText: typeSearch.trim() || undefined,
       });
 
-      setResults(response.data.results);
+      // CRITICAL: Ensure we never display more results than requested
+      const receivedResults = response.data.results || [];
+      const maxResults = safeCount;
+      
+      // Remove any null/undefined entries first
+      const cleanResults = receivedResults.filter(r => r != null);
+      
+      // Strictly limit to exactly maxResults - take only the first maxResults items
+      const limitedResults = cleanResults.slice(0, maxResults);
+      
+      // ABSOLUTE FINAL CHECK: Ensure we have exactly maxResults or fewer
+      // If we somehow have more, force truncate
+      if (limitedResults.length > maxResults) {
+        console.error(`[frontend] ERROR: limitedResults.length (${limitedResults.length}) > maxResults (${maxResults}), force truncating!`);
+        limitedResults.splice(maxResults);
+      }
+      
+      // ABSOLUTE FINAL: Ensure we have exactly maxResults (or fewer if not enough available)
+      // Remove duplicates by ID to be extra safe
+      const uniqueResults = limitedResults.filter((result, index, self) => 
+        index === self.findIndex(r => r.id === result.id)
+      );
+      
+      // Take exactly maxResults
+      const exactResults = uniqueResults.slice(0, maxResults);
+      
+      // Final verification - if we have more than requested, force truncate
+      if (exactResults.length > maxResults) {
+        console.error(`[frontend] CRITICAL: exactResults.length (${exactResults.length}) > maxResults (${maxResults}), force truncating!`);
+        exactResults.splice(maxResults);
+      }
+      
+      // Final safety check - log error only if critical issue
+      if (exactResults.length > maxResults) {
+        console.error(`[frontend] ERROR: exactResults.length (${exactResults.length}) > maxResults (${maxResults})!`);
+      }
+      
+      setResults(exactResults);
       setPage(response.data.meta?.page ?? targetPage);
       setTotalAvailable(
-        response.data.meta?.totalAvailable ?? response.data.results.length
+        response.data.meta?.totalAvailable ?? limitedResults.length
       );
     } catch (err: any) {
       setError(err.response?.data?.error || "Search failed. Please try again.");
@@ -144,8 +185,12 @@ function SearchPresenter() {
   };
 
   const hasPrevious = page > 1;
-  const hasNext = totalAvailable > page * resultCount;
-  const canSearch = query.trim().length > 0 || types.length > 0;
+  // Only show "Next" if:
+  // 1. We haven't shown all the requested results yet (results.length < resultCount), AND
+  // 2. There are more results available (totalAvailable > results.length)
+  // If user requested 20 results and we're showing 20, don't show "Next" (user only wants 20 total)
+  const hasNext = results.length < resultCount && totalAvailable > results.length;
+  const canSearch = (query.trim().length > 0 || types.length > 0) && resultCount >= MIN_RESULTS;
 
   return (
     <div className="w-full">
@@ -177,16 +222,11 @@ function SearchPresenter() {
             onTypeRemove={handleTypeRemove}
             dropdownOpen={showTypeDropdown}
             setDropdownOpen={setShowTypeDropdown}
-            fetchRecent={fetchRecent}
-            recentUrls={recentUrls}
-            recentLoading={recentLoading}
-            onRecentClick={handleRecentClick}
           />
 
           <ResultCountControl
             value={resultCountInput}
             onChange={handleResultInputChange}
-            maxResults={MAX_RESULTS}
           />
 
           {error && <ErrorBanner message={error} />}
