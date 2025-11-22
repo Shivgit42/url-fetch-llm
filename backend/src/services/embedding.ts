@@ -1,15 +1,20 @@
 import axios from 'axios';
-import dotenv from 'dotenv';
+import { ENV } from "../config/env";
 
-dotenv.config();
-
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
-const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'text-embedding-ada-002';
+console.log(`[embedding] Using hardcoded config - OPENROUTER_API_KEY: SET (${ENV.OPENROUTER_API_KEY.length} chars)`);
+console.log(`[embedding] Using hardcoded config - EMBEDDING_MODEL: ${ENV.EMBEDDING_MODEL}`);
 
 export async function generateEmbedding(text: string): Promise<number[]> {
-  if (OPENROUTER_API_KEY) {
+  // Use hardcoded config values
+  const OPENROUTER_API_KEY = ENV.OPENROUTER_API_KEY;
+  const EMBEDDING_MODEL = ENV.EMBEDDING_MODEL;
+
+  console.log(`[embedding] Using hardcoded config - OPENROUTER_API_KEY: SET (${OPENROUTER_API_KEY.length} chars)`);
+  console.log(`[embedding] Using hardcoded config - EMBEDDING_MODEL: ${EMBEDDING_MODEL}`);
+
+  if (OPENROUTER_API_KEY && OPENROUTER_API_KEY.length > 0) {
     try {
+      console.log(`[embedding] Generating embedding using OpenRouter`);
       const response = await axios.post(
         'https://openrouter.ai/api/v1/embeddings',
         {
@@ -20,36 +25,44 @@ export async function generateEmbedding(text: string): Promise<number[]> {
           headers: {
             'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
             'Content-Type': 'application/json',
-            'HTTP-Referer': process.env.OPENROUTER_HTTP_REFERER || 'http://localhost:3000',
+            'HTTP-Referer': 'http://localhost:3000',
             'X-Title': 'URL Fetch LLM',
           },
         }
       );
+      console.log(`[embedding] Successfully generated embedding using OpenRouter`);
       return response.data.data[0].embedding;
-    } catch (error: any) {}
-  }
-
-  if (OPENAI_API_KEY) {
-    try {
-      const response = await axios.post(
-        'https://api.openai.com/v1/embeddings',
-        {
-          model: EMBEDDING_MODEL,
-          input: text,
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
+    } catch (error: unknown) {
+      let errorMessage = "Unknown error";
+      let statusCode: number | undefined;
+      
+      if (axios.isAxiosError(error)) {
+        statusCode = error.response?.status;
+        errorMessage = error.response?.data?.error?.message || error.message;
+        
+        if (statusCode === 402) {
+          errorMessage = "OpenRouter API key payment required or insufficient credits. Please check your OpenRouter account balance and billing.";
+        } else if (statusCode === 401) {
+          errorMessage = "OpenRouter API key is invalid or expired. Please check your API key.";
+        } else if (statusCode === 429) {
+          errorMessage = "OpenRouter rate limit exceeded. Please try again later.";
         }
-      );
-      return response.data.data[0].embedding;
-    } catch (error: any) {
-      throw new Error(`Embedding generation failed: ${error.message}`);
+        
+        console.error(`[embedding] OpenRouter embedding failed (Status ${statusCode}): ${errorMessage}`);
+        if (error.response?.data) {
+          console.error(`[embedding] OpenRouter error details:`, JSON.stringify(error.response.data, null, 2));
+        }
+      } else {
+        errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`[embedding] OpenRouter embedding failed: ${errorMessage}`);
+      }
+      
+      throw new Error(`Embedding generation failed: ${errorMessage}`);
     }
   }
 
-  throw new Error('No embedding API key configured (OPENROUTER_API_KEY or OPENAI_API_KEY)');
+  // This should never happen with hardcoded config
+  console.error(`[embedding] ERROR: No embedding API key available!`);
+  throw new Error('No embedding API key configured');
 }
 

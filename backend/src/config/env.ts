@@ -1,0 +1,17 @@
+// Hardcoded environment variables
+// WARNING: This is not secure for production - use .env file instead
+
+export const ENV = {
+  DB_HOST: "ep-wispy-union-ad2t5nto-pooler.c-2.us-east-1.aws.neon.tech",
+  DB_PORT: 5432,
+  DB_NAME: "neondb",
+  DB_USER: "neondb_owner",
+  DB_PASSWORD: "npg_Ay86oaGNCKis",
+  PINECONE_API_KEY: "pcsk_2QbPND_M5a259ah1aQmz7VeejcnifPRQtPh9jC8T9erfPWpGuPcQHn2unxxjvi9bH32hY2",
+  PINECONE_INDEX_NAME: "semantic-search",
+  REDIS_HOST: "localhost",
+  REDIS_PORT: 6379,
+  OPENROUTER_API_KEY: "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",
+  EMBEDDING_MODEL: "text-embedding-ada-002",
+} as const;
+

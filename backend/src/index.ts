@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
 import { initDatabase, pool } from "./config/database";
@@ -9,21 +8,19 @@ import uploadRouter from "./routes/upload";
 import searchRouter from "./routes/search";
 import statusRouter from "./routes/status";
 import typesRouter from "./routes/types";
+import { ENV } from "./config/env";
 
-dotenv.config();
+console.log(`[server] Using hardcoded configuration values`);
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = 5001; // Using default port
 const log = (...args: unknown[]) =>
   console.info(new Date().toISOString(), "-", ...args);
 
 // CORS configuration - allow same origin when serving frontend
-const frontendPort = process.env.FRONTEND_PORT || PORT;
 app.use(
   cors({
-    origin: process.env.NODE_ENV === "production" 
-      ? undefined // Same origin in production
-      : `http://localhost:${frontendPort === PORT ? 3050 : frontendPort}`,
+    origin: "http://localhost:3050",
     credentials: true,
   })
 );

@@ -12,10 +12,17 @@ interface SearchCriteria {
 
 const MAX_TOP_K = 1000;
 const MIN_SEMANTIC_SCORE = 0.55;
-const hasEmbeddingKey = Boolean(
-  process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY
-);
-const hasPineconeKey = Boolean(process.env.PINECONE_API_KEY);
+
+import { ENV } from "../../config/env";
+
+// Check environment variables from hardcoded config
+function hasEmbeddingKey(): boolean {
+  return Boolean(ENV.OPENROUTER_API_KEY);
+}
+
+function hasPineconeKey(): boolean {
+  return Boolean(ENV.PINECONE_API_KEY);
+}
 
 /**
  * Normalizes a string for fuzzy matching by:
@@ -43,63 +50,104 @@ function normalizedIncludes(normalizedQuery: string, text: string): boolean {
 export async function executeSearch(criteria: SearchCriteria) {
   const { query, types, perPage, page, typeFilterText } = criteria;
 
-  const canUseVector = hasEmbeddingKey && hasPineconeKey;
-  let queryEmbedding: number[] | null = null;
+  // Check environment variables at runtime
+  const pineconeKeyAvailable = hasPineconeKey();
+  const embeddingKeyAvailable = hasEmbeddingKey();
 
-  if (!canUseVector) {
-    console.warn(
-      `[search] Falling back to text search (embeddingKey=${hasEmbeddingKey}, pineconeKey=${hasPineconeKey})`
-    );
-    return fallbackTextSearch({
-      query,
-      types,
-      perPage,
-      page,
-      typeFilterText,
-      reason: "Vector search disabled (missing API key)",
-    });
+  console.log(`[search] Config check - Pinecone: ${pineconeKeyAvailable}, Embedding: ${embeddingKeyAvailable}`);
+  console.log(`[search] Using hardcoded config values`);
+
+  // ONLY use Pinecone - no database fallback
+  if (!pineconeKeyAvailable) {
+    console.error(`[search] ERROR: Pinecone is not configured!`);
+    console.error(`[search] Please set PINECONE_API_KEY in your .env file`);
+    return {
+      results: [],
+      meta: {
+        page,
+        perPage,
+        totalAvailable: 0,
+        degraded: true,
+        reason: "Pinecone is not configured. Set PINECONE_API_KEY in .env file.",
+      },
+    };
+  }
+
+  // Pinecone requires embeddings to query
+  if (!embeddingKeyAvailable) {
+    console.error(`[search] ERROR: Embedding API key is missing!`);
+    console.error(`[search] Pinecone requires embeddings to query. Please set OPENROUTER_API_KEY or OPENAI_API_KEY in .env`);
+    return {
+      results: [],
+      meta: {
+        page,
+        perPage,
+        totalAvailable: 0,
+        degraded: true,
+        reason: "Embedding API key required for Pinecone search. Set OPENROUTER_API_KEY or OPENAI_API_KEY in .env file.",
+      },
+    };
+  }
+
+  // Both Pinecone and embedding keys available - use Pinecone vector search
+  // NEVER skip Pinecone - always try it first!
+  console.log(`[search] ===== USING PINECONE VECTOR SEARCH (NOT DATABASE) =====`);
+  let queryEmbedding: number[] | null = null;
+  
+  try {
+    console.log(`[search] Step 1: Generating embedding for query: "${query}"`);
+    queryEmbedding = await generateEmbedding(query);
+    if (!queryEmbedding || queryEmbedding.length === 0) {
+      throw new Error("Generated embedding is empty");
+    }
+    console.log(`[search] Step 2: Embedding generated successfully (${queryEmbedding.length} dimensions), now querying Pinecone...`);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[search] ERROR: Embedding generation failed: ${errorMessage}`);
+    console.error(`[search] Cannot proceed without embeddings. Check your API keys.`);
+    return {
+      results: [],
+      meta: {
+        page,
+        perPage,
+        totalAvailable: 0,
+        degraded: true,
+        reason: `Embedding generation failed: ${errorMessage}. Check your OPENROUTER_API_KEY or OPENAI_API_KEY configuration.`,
+      },
+    };
   }
 
   try {
-    queryEmbedding = await generateEmbedding(query);
-  } catch (error: any) {
-    console.warn(`[search] Semantic search unavailable: ${error.message}`);
-    return fallbackTextSearch({
-      query,
-      types,
-      perPage,
-      page,
-      typeFilterText,
-      reason: error.message || "Semantic search unavailable",
+    console.log(`[search] Querying Pinecone index: ${PINECONE_INDEX_NAME}`);
+    const index = pinecone.index(PINECONE_INDEX_NAME);
+
+    const filter: Record<string, unknown> = {};
+    if (types && types.length > 0) {
+      filter.type = { $in: types };
+      console.log(`[search] Applying type filter: ${types.join(", ")}`);
+    }
+
+    const topKForQuery = Math.min(
+      MAX_TOP_K,
+      Math.max(perPage * page, perPage * 3)
+    );
+
+    console.log(`[search] Querying Pinecone with topK: ${topKForQuery}`);
+    const queryResponse = await index.query({
+      vector: queryEmbedding,
+      topK: topKForQuery,
+      includeMetadata: true,
+      filter: Object.keys(filter).length > 0 ? filter : undefined,
     });
-  }
+    console.log(`[search] Pinecone returned ${queryResponse.matches?.length || 0} matches`);
 
-  const index = pinecone.index(PINECONE_INDEX_NAME);
+    const now = new Date();
+    const queryLower = query.toLowerCase();
+    const normalizedQuery = normalizeForMatching(query);
 
-  const filter: Record<string, any> = {};
-  if (types && types.length > 0) {
-    filter.type = { $in: types };
-  }
+    const matches = queryResponse.matches || [];
 
-  const topKForQuery = Math.min(
-    MAX_TOP_K,
-    Math.max(perPage * page, perPage * 3)
-  );
-
-  const queryResponse = await index.query({
-    vector: queryEmbedding,
-    topK: topKForQuery,
-    includeMetadata: true,
-    filter: Object.keys(filter).length > 0 ? filter : undefined,
-  });
-
-  const now = new Date();
-  const queryLower = query.toLowerCase();
-  const normalizedQuery = normalizeForMatching(query);
-
-  const matches = queryResponse.matches || [];
-
-  const allResults = matches
+    const allResults = matches
     .map((match) => {
       const metadata = match.metadata as {
         url: string;
@@ -147,7 +195,6 @@ export async function executeSearch(criteria: SearchCriteria) {
         boostedScore += 0.25;
       }
 
-      const normalizedUrl = normalizeForMatching(metadata.url);
       if (normalizedIncludes(normalizedQuery, metadata.url) || urlLower.includes(queryLower)) {
         boostedScore += 0.1;
         const urlPath = urlLower.split("?")[0];
@@ -199,31 +246,46 @@ export async function executeSearch(criteria: SearchCriteria) {
       return (b.originalScore || 0) - (a.originalScore || 0);
     });
 
-  let filteredResults = allResults;
-  const filterValue = typeFilterText?.trim().toLowerCase();
-  if (filterValue) {
-    filteredResults = allResults.filter((result) => {
-      const typeMatch = (result.type || "").toLowerCase().includes(filterValue);
-      const urlMatch = result.url.toLowerCase().includes(filterValue);
-      const titleMatch = (result.title || "").toLowerCase().includes(filterValue);
-      return typeMatch || urlMatch || titleMatch;
-    });
+    let filteredResults = allResults;
+    const filterValue = typeFilterText?.trim().toLowerCase();
+    if (filterValue) {
+      filteredResults = allResults.filter((result) => {
+        const typeMatch = (result.type || "").toLowerCase().includes(filterValue);
+        const urlMatch = result.url.toLowerCase().includes(filterValue);
+        const titleMatch = (result.title || "").toLowerCase().includes(filterValue);
+        return typeMatch || urlMatch || titleMatch;
+      });
+    }
+
+    const startIndex = (page - 1) * perPage;
+    const paginatedResults = filteredResults.slice(
+      startIndex,
+      startIndex + perPage
+    );
+
+    return {
+      results: paginatedResults,
+      meta: {
+        page,
+        perPage,
+        totalAvailable: filteredResults.length,
+      },
+    };
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[search] ERROR: Pinecone query failed: ${errorMessage}`);
+    console.error(`[search] Cannot proceed without Pinecone. Check your Pinecone configuration.`);
+    return {
+      results: [],
+      meta: {
+        page,
+        perPage,
+        totalAvailable: 0,
+        degraded: true,
+        reason: `Pinecone query failed: ${errorMessage}. Check your PINECONE_API_KEY and index configuration.`,
+      },
+    };
   }
-
-  const startIndex = (page - 1) * perPage;
-  const paginatedResults = filteredResults.slice(
-    startIndex,
-    startIndex + perPage
-  );
-
-  return {
-    results: paginatedResults,
-    meta: {
-      page,
-      perPage,
-      totalAvailable: filteredResults.length,
-    },
-  };
 }
 
 async function fallbackTextSearch(
@@ -373,9 +435,7 @@ async function fallbackTextSearch(
       perPage,
       totalAvailable: filteredResults.length,
       degraded: true,
-      reason:
-        reason ||
-        "Vector search unavailable (missing embedding or Pinecone API key). Returned text-based matches.",
+      reason: reason || "Using database text search (Pinecone vector search unavailable).",
     },
   };
 }

@@ -1,17 +1,14 @@
 import { Pinecone } from "@pinecone-database/pinecone";
-import dotenv from "dotenv";
-
-dotenv.config();
+import { ENV } from "./env";
 
 export const pinecone = new Pinecone({
-  apiKey: process.env.PINECONE_API_KEY || "",
+  apiKey: ENV.PINECONE_API_KEY,
 });
 
-export const PINECONE_INDEX_NAME =
-  process.env.PINECONE_INDEX_NAME || "url-embeddings";
+export const PINECONE_INDEX_NAME = ENV.PINECONE_INDEX_NAME;
 
 export async function initPinecone(): Promise<boolean> {
-  const apiKey = process.env.PINECONE_API_KEY;
+  const apiKey = ENV.PINECONE_API_KEY;
   
   if (!apiKey || apiKey.trim() === "") {
     console.warn("[pinecone] PINECONE_API_KEY not set. Pinecone features will be disabled.");

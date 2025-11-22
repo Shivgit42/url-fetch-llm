@@ -1,12 +1,10 @@
-import dotenv from "dotenv";
 import type { Job } from "bull";
 import { urlQueue } from "./config/queue";
 import { extractContentFromUrl } from "./services/contentExtractor";
 import { generateEmbedding } from "./services/embedding";
 import { pool, initDatabase } from "./config/database";
 import { pinecone, PINECONE_INDEX_NAME, initPinecone } from "./config/pinecone";
-
-dotenv.config();
+import { ENV } from "./config/env";
 
 const log = (...args: unknown[]) =>
   console.info(new Date().toISOString(), "[worker]", ...args);
@@ -17,10 +15,8 @@ interface JobData {
   id?: string;
 }
 
-const hasEmbeddingKey = Boolean(
-  process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY
-);
-const hasPineconeKey = Boolean(process.env.PINECONE_API_KEY);
+const hasEmbeddingKey = Boolean(ENV.OPENROUTER_API_KEY);
+const hasPineconeKey = Boolean(ENV.PINECONE_API_KEY);
 
 void urlQueue.process(10, async (job: Job<JobData>) => {
   const { url, type } = job.data;
