@@ -8,9 +8,6 @@ import uploadRouter from "./routes/upload";
 import searchRouter from "./routes/search";
 import statusRouter from "./routes/status";
 import typesRouter from "./routes/types";
-import { ENV } from "./config/env";
-
-console.log(`[server] Using hardcoded configuration values`);
 
 const app = express();
 const PORT = 5001; // Using default port
@@ -68,7 +65,7 @@ if (!frontendExists) {
 if (frontendExists) {
   // Serve static files from frontend dist
   app.use(express.static(frontendDistPath));
-  
+
   // SPA fallback - serve index.html for all non-API routes
   app.get("*", (req, res) => {
     // Don't serve index.html for API routes
@@ -77,18 +74,21 @@ if (frontendExists) {
     }
     res.sendFile(path.join(frontendDistPath, "index.html"));
   });
-  
+
   log(`Frontend static files enabled from: ${frontendDistPath}`);
 } else {
-  log(`Frontend dist not found at ${frontendDistPath}. Run 'npm run build' in frontend directory.`);
-  
+  log(
+    `Frontend dist not found at ${frontendDistPath}. Run 'npm run build' in frontend directory.`
+  );
+
   // Fallback root endpoint when frontend is not built
   app.get("/", (req, res) => {
     res.json({
       service: "url-fetch-llm-backend",
       host: req.hostname,
       health: "/health",
-      frontend: "Frontend not built. Run 'npm run build' in frontend directory.",
+      frontend:
+        "Frontend not built. Run 'npm run build' in frontend directory.",
     });
   });
 }
@@ -97,11 +97,11 @@ async function startServer() {
   const bootStarted = Date.now();
   try {
     log("Initializing services: database, pinecone");
-    
+
     // Initialize database (required)
     await initDatabase();
     log("Database initialized successfully");
-    
+
     // Initialize Pinecone (optional - won't crash if it fails)
     const pineconeInitialized = await initPinecone();
     if (pineconeInitialized) {
