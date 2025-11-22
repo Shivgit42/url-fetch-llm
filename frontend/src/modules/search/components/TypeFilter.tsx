@@ -1,10 +1,3 @@
-interface RecentItem {
-  id: number;
-  url: string;
-  title?: string;
-  type?: string;
-}
-
 interface TypeFilterProps {
   types: string[];
   availableTypes: string[];
@@ -14,10 +7,6 @@ interface TypeFilterProps {
   onTypeRemove: (type: string) => void;
   dropdownOpen: boolean;
   setDropdownOpen: (open: boolean) => void;
-  fetchRecent: () => void;
-  recentUrls: RecentItem[];
-  recentLoading: boolean;
-  onRecentClick: (item: RecentItem) => void;
 }
 
 function TypeFilter({
@@ -29,10 +18,6 @@ function TypeFilter({
   onTypeRemove,
   dropdownOpen,
   setDropdownOpen,
-  fetchRecent,
-  recentUrls,
-  recentLoading,
-  onRecentClick,
 }: TypeFilterProps) {
   const filteredTypes = availableTypes.filter((type) =>
     type.toLowerCase().includes(typeSearch.toLowerCase())
@@ -43,7 +28,12 @@ function TypeFilter({
   return (
     <div className="flex flex-col gap-3">
       <label className="font-semibold text-slate-800 flex items-center gap-2">
-        <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg
+          className="w-5 h-5 text-slate-500"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -77,11 +67,12 @@ function TypeFilter({
           onChange={(e) => onTypeSearchChange(e.target.value)}
           onFocus={() => {
             setDropdownOpen(true);
-            fetchRecent();
           }}
           onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
           placeholder={
-            disabled ? "No types available yet" : 'Type e.g. "Tier 1" or paste part of a URL...'
+            disabled
+              ? "No types available yet"
+              : 'Type e.g. "Tier 1" or paste part of a URL...'
           }
           className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-transparent transition-all bg-white text-slate-900 placeholder:text-slate-400"
           disabled={disabled}
@@ -95,7 +86,12 @@ function TypeFilter({
             <div className="absolute left-0 right-0 bg-white border-2 border-slate-200 rounded-2xl mt-2 max-h-64 overflow-y-auto z-20 shadow-[0_20px_60px_rgba(15,23,42,0.1)]">
               <div className="pb-2 border-b border-slate-100">
                 <div className="text-xs font-bold text-slate-500 uppercase mb-1 px-4 pt-3 flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -115,57 +111,15 @@ function TypeFilter({
                       type="button"
                       className="w-full text-left px-4 py-2.5 bg-transparent border-none cursor-pointer hover:bg-slate-100 transition-colors text-slate-700"
                       key={type}
-                        onClick={() => {
-                          setDropdownOpen(false);
-                          onTypeSelect(type);
-                        }}
+                      onClick={() => {
+                        setDropdownOpen(false);
+                        onTypeSelect(type);
+                      }}
                     >
                       {type}
                     </button>
                   ))
                 )}
-              </div>
-              <div className="pb-2">
-                <div className="text-xs font-bold text-slate-500 uppercase mb-1 px-4 pt-3 flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  Recent URLs
-                </div>
-                {recentLoading && (
-                  <div className="w-full text-left px-4 py-3 bg-transparent border-none cursor-default text-slate-400">
-                    Loading...
-                  </div>
-                )}
-                {!recentLoading && recentUrls.length === 0 && (
-                  <div className="w-full text-left px-4 py-3 bg-transparent border-none cursor-default text-slate-400">
-                    No recent URLs yet
-                  </div>
-                )}
-                {!recentLoading &&
-                  recentUrls.map((item) => (
-                    <button
-                      type="button"
-                      className="w-full flex flex-col items-start px-4 py-3 border-none bg-transparent cursor-pointer text-left hover:bg-slate-100 transition-colors rounded text-slate-800"
-                      key={`${item.id}-${item.url}`}
-                      onClick={() => {
-                        setDropdownOpen(false);
-                        onRecentClick(item);
-                      }}
-                    >
-                      <span className="font-semibold text-slate-900 text-sm">
-                        {item.title || item.url}
-                      </span>
-                      <span className="text-xs text-slate-500 truncate w-full">
-                        {item.url}
-                      </span>
-                    </button>
-                  ))}
               </div>
             </div>
           )
@@ -176,4 +130,3 @@ function TypeFilter({
 }
 
 export default TypeFilter;
-
