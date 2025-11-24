@@ -1,5 +1,4 @@
 // Hardcoded environment variables
-// WARNING: This is not secure for production - use .env file instead
 
 export const ENV = {
   DB_HOST: "ep-wispy-union-ad2t5nto-pooler.c-2.us-east-1.aws.neon.tech",
