@@ -13,8 +13,8 @@ export const ENV = {
   REDIS_HOST: "localhost",
   REDIS_PORT: 6379,
   OPENROUTER_API_KEY:
-    "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",
+    "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",
   OPENAI_API_KEY:
-    "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",
+    "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",
   EMBEDDING_MODEL: "text-embedding-ada-002",
 } as const;
