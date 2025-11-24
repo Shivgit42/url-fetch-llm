@@ -18,6 +18,8 @@ interface JobData {
 const hasEmbeddingKey = Boolean(ENV.OPENROUTER_API_KEY);
 const hasPineconeKey = Boolean(ENV.PINECONE_API_KEY);
 
+console.log("ENV OPEN ROUTERRR---->", ENV.OPENROUTER_API_KEY);
+
 void urlQueue.process(10, async (job: Job<JobData>) => {
   const { url, type } = job.data;
   log(`Processing job: ${url} (type: ${type})`);

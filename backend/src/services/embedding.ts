@@ -7,6 +7,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   const OPENAI_API_KEY = ENV.OPENAI_API_KEY;
   const EMBEDDING_MODEL = ENV.EMBEDDING_MODEL;
 
+  console.log("OPENROUTER_API_KEY -> Test", ENV.OPENROUTER_API_KEY);
   // Try OpenRouter first if available
   if (OPENROUTER_API_KEY && OPENROUTER_API_KEY.length > 0) {
     try {

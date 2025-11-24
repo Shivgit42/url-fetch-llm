@@ -17,7 +17,7 @@ if (fs.existsSync(envPath)) {
   
   // Log which keys are detected (without showing values)
   const requiredKeys = ["PINECONE_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "DB_HOST", "REDIS_HOST", "EMBEDDING_MODEL"];
-  console.log("[PM2] ===== ENVIRONMENT VARIABLES CHECK =====");
+  console.log("[PM2] ===== ENVIRONMENT VARIABLES CHECK =====", );
   requiredKeys.forEach(key => {
     const value = envVars[key];
     const isSet = value ? "SET" : "NOT SET";
