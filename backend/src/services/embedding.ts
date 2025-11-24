@@ -8,13 +8,15 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   const EMBEDDING_MODEL = ENV.EMBEDDING_MODEL;
 
   console.log("OPENROUTER_API_KEY -> Test", ENV.OPENROUTER_API_KEY);
+  console.log("OPENROUTER_API_KEY -> Test", ENV.EMBEDDING_MODEL);
+
   // Try OpenRouter first if available
   if (OPENROUTER_API_KEY && OPENROUTER_API_KEY.length > 0) {
     try {
       const response = await axios.post(
         "https://openrouter.ai/api/v1/embeddings",
         {
-          model: `openai/${EMBEDDING_MODEL}`,
+          model: 'openai/' + EMBEDDING_MODEL,
           input: text,
         },
         {

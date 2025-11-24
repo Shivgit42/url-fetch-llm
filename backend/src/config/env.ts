@@ -1,19 +1,17 @@
-// Hardcoded environment variables
+import dotenv from "dotenv";
+dotenv.config();
 
 export const ENV = {
-  DB_HOST: "ep-wispy-union-ad2t5nto-pooler.c-2.us-east-1.aws.neon.tech",
-  DB_PORT: 5432,
-  DB_NAME: "neondb",
-  DB_USER: "neondb_owner",
-  DB_PASSWORD: "npg_Ay86oaGNCKis",
-  PINECONE_API_KEY:
-    "pcsk_2QbPND_M5a259ah1aQmz7VeejcnifPRQtPh9jC8T9erfPWpGuPcQHn2unxxjvi9bH32hY2",
-  PINECONE_INDEX_NAME: "semantic-search",
-  REDIS_HOST: "localhost",
-  REDIS_PORT: 6379,
-  OPENROUTER_API_KEY:
-    "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",
-  OPENAI_API_KEY:
-    "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",
-  EMBEDDING_MODEL: "text-embedding-ada-002",
+  DB_HOST: process.env.DB_HOST!,
+  DB_PORT: Number(process.env.DB_PORT) || 5432,
+  DB_NAME: process.env.DB_NAME!,
+  DB_USER: process.env.DB_USER!,
+  DB_PASSWORD: process.env.DB_PASSWORD!,
+  PINECONE_API_KEY: process.env.PINECONE_API_KEY!,
+  PINECONE_INDEX_NAME: process.env.PINECONE_INDEX_NAME!,
+  REDIS_HOST: process.env.REDIS_HOST || "127.0.0.1",
+  REDIS_PORT: Number(process.env.REDIS_PORT) || 6379,
+  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY!,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY!,
+  EMBEDDING_MODEL: process.env.EMBEDDING_MODEL!,
 } as const;

@@ -5,6 +5,7 @@ import { generateEmbedding } from "./services/embedding";
 import { pool, initDatabase } from "./config/database";
 import { pinecone, PINECONE_INDEX_NAME, initPinecone } from "./config/pinecone";
 import { ENV } from "./config/env";
+import { Redis } from "ioredis";
 
 const log = (...args: unknown[]) =>
   console.info(new Date().toISOString(), "[worker]", ...args);
@@ -150,8 +151,13 @@ async function startWorker() {
     log("Initializing worker services: database, pinecone, redis");
     
     // Test Redis connection
+    const redis = new Redis({
+      host: ENV.REDIS_HOST,
+      port: Number(ENV.REDIS_PORT),
+    });
+    
     try {
-      await urlQueue.getWaitingCount();
+      await redis.ping();
       log("Redis connection: OK");
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
