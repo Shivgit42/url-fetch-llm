@@ -30,7 +30,8 @@ void urlQueue.process(10, async (job: Job<JobData>) => {
     try {
       content = await extractContentFromUrl(url);
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       log(`Failed to fetch ${url}: ${errorMessage}. Using fallback content.`);
       content = {
         title: url,
@@ -52,7 +53,8 @@ void urlQueue.process(10, async (job: Job<JobData>) => {
       try {
         embedding = await generateEmbedding(embeddingText);
       } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         log(`Embedding generation skipped for ${url}: ${errorMessage}`);
       }
     } else {
@@ -68,9 +70,10 @@ void urlQueue.process(10, async (job: Job<JobData>) => {
 
     if (embedding && hasPineconeKey) {
       try {
-        const dbResult = await pool.query<{ id: number }>("SELECT id FROM urls WHERE url = $1", [
-          url,
-        ]);
+        const dbResult = await pool.query<{ id: number }>(
+          "SELECT id FROM urls WHERE url = $1",
+          [url]
+        );
         const dbId = dbResult.rows[0]?.id;
 
         if (!dbId) {
@@ -93,20 +96,32 @@ void urlQueue.process(10, async (job: Job<JobData>) => {
               type,
               title,
               snippet: preview,
-              updated_at: updatedAt instanceof Date ? updatedAt.toISOString() : new Date(updatedAt).toISOString(),
+              updated_at:
+                updatedAt instanceof Date
+                  ? updatedAt.toISOString()
+                  : new Date(updatedAt).toISOString(),
             },
           },
         ]);
       } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         log(`Failed to upsert ${url} to Pinecone: ${errorMessage}`);
       }
     } else if (!hasPineconeKey) {
       log(`Skipping Pinecone sync for ${url}: no PINECONE_API_KEY configured`);
     }
 
-    const result = { success: true, url, vectorSynced: Boolean(embedding && hasPineconeKey) };
-    log(`Job completed successfully: ${url}${result.vectorSynced ? " (vector synced)" : ""}`);
+    const result = {
+      success: true,
+      url,
+      vectorSynced: Boolean(embedding && hasPineconeKey),
+    };
+    log(
+      `Job completed successfully: ${url}${
+        result.vectorSynced ? " (vector synced)" : ""
+      }`
+    );
     return result;
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -119,7 +134,10 @@ void urlQueue.process(10, async (job: Job<JobData>) => {
         [url]
       );
     } catch (updateError: unknown) {
-      const updateErrorMessage = updateError instanceof Error ? updateError.message : String(updateError);
+      const updateErrorMessage =
+        updateError instanceof Error
+          ? updateError.message
+          : String(updateError);
       log(`Failed to update URL status to failed: ${updateErrorMessage}`);
     }
 
@@ -150,18 +168,19 @@ async function startWorker() {
   const bootStarted = Date.now();
   try {
     log("Initializing worker services: database, pinecone, redis");
-    
+
     // Test Redis connection
     const redis = new Redis({
       host: ENV.REDIS_HOST,
       port: Number(ENV.REDIS_PORT),
     });
-    
+
     try {
       await redis.ping();
       log("Redis connection: OK");
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       log(`Redis connection failed: ${errorMessage}`);
       throw error;
     }
@@ -205,7 +224,9 @@ setInterval(async () => {
       urlQueue.getCompletedCount(),
       urlQueue.getFailedCount(),
     ]);
-    log(`Queue stats - Waiting: ${waiting}, Active: ${active}, Completed: ${completed}, Failed: ${failed}`);
+    log(
+      `Queue stats - Waiting: ${waiting}, Active: ${active}, Completed: ${completed}, Failed: ${failed}`
+    );
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log(`Health check error: ${errorMessage}`);
@@ -215,4 +236,3 @@ setInterval(async () => {
 void startWorker();
 
 export {};
-
