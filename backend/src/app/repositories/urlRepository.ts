@@ -22,18 +22,55 @@ export async function upsertUrls(rows: NormalizedUrlRow[]) {
 
 export async function updateUrlAsCompleted(
   url: string,
-  data: { title: string; contentPreview: string; extractedContent: string }
+  data: {
+    title: string;
+    contentPreview: string;
+    extractedContent: string;
+    fullTextContent?: string;
+  }
 ) {
   await pool.query(
     `UPDATE urls
      SET title = $1,
          contentPreview = $2,
          extractedContent = $3,
+         fullTextContent = $4,
          status = 'completed',
          updated_at = CURRENT_TIMESTAMP
-     WHERE url = $4`,
-    [data.title, data.contentPreview, data.extractedContent, url]
+     WHERE url = $5`,
+    [
+      data.title,
+      data.contentPreview,
+      data.extractedContent,
+      data.fullTextContent || null,
+      url,
+    ]
   );
+}
+
+export async function fetchFullContentByIds(
+  ids: number[]
+): Promise<Map<number, string>> {
+  if (ids.length === 0) return new Map();
+
+  const result = await pool.query<{
+    id: number;
+    fulltextcontent: string | null;
+    extractedcontent: string | null;
+  }>(
+    `SELECT id, fullTextContent, extractedContent 
+     FROM urls 
+     WHERE id = ANY($1::int[]) AND status = 'completed'`,
+    [ids]
+  );
+
+  const contentMap = new Map<number, string>();
+  for (const row of result.rows) {
+    // Prefer fullTextContent, fallback to extractedContent (HTML), then empty string
+    const content = row.fulltextcontent || row.extractedcontent || "";
+    contentMap.set(row.id, content);
+  }
+  return contentMap;
 }
 
 export async function markUrlFailed(url: string) {

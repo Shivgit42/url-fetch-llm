@@ -43,6 +43,7 @@ void urlQueue.process(10, async (job: Job<JobData>) => {
     const textContent = content.textContent.substring(0, 10000);
     const preview = textContent.substring(0, 500);
     const extractedHtml = content.htmlContent || "";
+    const fullTextContent = textContent; // Store full text for relevant snippet extraction
 
     const embeddingText = `${title}\n${textContent}`;
     let embedding: number[] | null = null;
@@ -60,9 +61,9 @@ void urlQueue.process(10, async (job: Job<JobData>) => {
 
     await pool.query(
       `UPDATE urls 
-       SET title = $1, contentPreview = $2, extractedContent = $3, status = 'completed', updated_at = CURRENT_TIMESTAMP
-       WHERE url = $4`,
-      [title, preview, extractedHtml, url]
+       SET title = $1, contentPreview = $2, extractedContent = $3, fullTextContent = $4, status = 'completed', updated_at = CURRENT_TIMESTAMP
+       WHERE url = $5`,
+      [title, preview, extractedHtml, fullTextContent, url]
     );
 
     if (embedding && hasPineconeKey) {

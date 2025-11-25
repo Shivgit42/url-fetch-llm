@@ -65,6 +65,18 @@ export async function initDatabase() {
     `);
 
     await client.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'urls' AND column_name = 'fulltextcontent'
+        ) THEN
+          ALTER TABLE urls ADD COLUMN fullTextContent TEXT;
+        END IF;
+      END $$;
+    `);
+
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_urls_status ON urls(status);
       CREATE INDEX IF NOT EXISTS idx_urls_type ON urls(type);
       CREATE INDEX IF NOT EXISTS idx_urls_url ON urls(url);

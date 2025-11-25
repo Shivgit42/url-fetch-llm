@@ -1,6 +1,7 @@
 import { generateEmbedding } from "../../services/embedding";
 import { pinecone, PINECONE_INDEX_NAME } from "../../config/pinecone";
 import { pool } from "../../config/database";
+import { fetchFullContentByIds } from "../repositories/urlRepository";
 
 interface SearchCriteria {
   query: string;
@@ -46,6 +47,94 @@ function normalizeForMatching(text: string): string {
 function normalizedIncludes(normalizedQuery: string, text: string): boolean {
   const normalizedText = normalizeForMatching(text);
   return normalizedText.includes(normalizedQuery);
+}
+
+/**
+ * Strips HTML tags from content
+ */
+function stripHtmlTags(html: string): string {
+  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Extracts the most relevant paragraph from content based on the search query
+ * Splits content into paragraphs and finds the one with highest relevance score
+ */
+function extractRelevantParagraph(content: string, query: string): string {
+  if (!content || content.trim().length === 0) {
+    return "";
+  }
+
+  // Strip HTML tags if present (for fallback to extractedContent)
+  let textContent = content;
+  if (content.includes('<') && content.includes('>')) {
+    textContent = stripHtmlTags(content);
+  }
+
+  const queryLower = query.toLowerCase();
+  const normalizedQuery = normalizeForMatching(query);
+  const queryWords = normalizedQuery.split(/\s+/).filter(w => w.length > 2); // Filter out short words
+
+  // Split content into paragraphs (by double newlines, or single newline if no doubles)
+  const paragraphs = textContent
+    .split(/\n\s*\n/)
+    .map(p => p.trim())
+    .filter(p => p.length > 20); // Filter out very short paragraphs
+
+  if (paragraphs.length === 0) {
+    // Fallback: split by single newlines or sentences
+    const sentences = textContent.split(/[.!?]\s+/).filter(s => s.trim().length > 20);
+    if (sentences.length > 0) {
+      return sentences[0].substring(0, 500);
+    }
+    return textContent.substring(0, 500);
+  }
+
+  // Score each paragraph based on query relevance
+  let bestParagraph = paragraphs[0];
+  let bestScore = 0;
+
+  for (const paragraph of paragraphs) {
+    const paraLower = paragraph.toLowerCase();
+    const normalizedPara = normalizeForMatching(paragraph);
+    let score = 0;
+
+    // Exact query match (highest priority)
+    if (normalizedPara.includes(normalizedQuery)) {
+      score += 100;
+    }
+    if (paraLower.includes(queryLower)) {
+      score += 50;
+    }
+
+    // Word-by-word matching
+    for (const word of queryWords) {
+      if (normalizedPara.includes(word)) {
+        score += 10;
+      }
+      // Bonus for word at start of paragraph
+      if (normalizedPara.startsWith(word)) {
+        score += 5;
+      }
+    }
+
+    // Prefer paragraphs of reasonable length (100-500 chars)
+    const paraLength = paragraph.length;
+    if (paraLength >= 100 && paraLength <= 500) {
+      score += 5;
+    } else if (paraLength > 500) {
+      // Truncate long paragraphs but still consider them
+      score += 2;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestParagraph = paragraph;
+    }
+  }
+
+  // Return the best paragraph, truncated to 500 chars if needed
+  return bestParagraph.substring(0, 500).trim();
 }
 
 export async function executeSearch(criteria: SearchCriteria) {
@@ -390,8 +479,31 @@ export async function executeSearch(criteria: SearchCriteria) {
       finalResults.splice(perPage);
     }
 
+    // Fetch full content for final results to extract relevant paragraphs
+    const resultIds = finalResults.map(r => parseInt(r.id)).filter(id => !isNaN(id));
+    const contentMap = await fetchFullContentByIds(resultIds);
+
+    // Replace snippets with relevant paragraphs
+    const resultsWithRelevantSnippets = finalResults.map(result => {
+      const id = parseInt(result.id);
+      const fullContent = contentMap.get(id);
+      
+      if (fullContent) {
+        const relevantParagraph = extractRelevantParagraph(fullContent, query);
+        if (relevantParagraph) {
+          return {
+            ...result,
+            snippet: relevantParagraph,
+          };
+        }
+      }
+      
+      // Fallback to original snippet if no relevant paragraph found
+      return result;
+    });
+
     return {
-      results: finalResults,
+      results: resultsWithRelevantSnippets,
       meta: {
         page,
         perPage,
