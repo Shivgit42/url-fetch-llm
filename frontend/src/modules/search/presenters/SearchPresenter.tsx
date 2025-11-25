@@ -6,11 +6,7 @@ import ResultCountControl from "../components/ResultCountControl";
 import ErrorBanner from "../components/ErrorBanner";
 import ResultsSection from "../components/ResultsSection";
 import EmptyState from "../components/EmptyState";
-import {
-  performSearch,
-  fetchTypes,
-  fetchRecentUrls,
-} from "../services/searchService";
+import { performSearch, fetchTypes } from "../services/searchService";
 
 const MIN_RESULTS = 1;
 
@@ -27,9 +23,6 @@ function SearchPresenter() {
   const [page, setPage] = useState<number>(1);
   const [totalAvailable, setTotalAvailable] = useState<number>(0);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
-  const [recentUrls, setRecentUrls] = useState<any[]>([]);
-  const [recentLoading, setRecentLoading] = useState(false);
-  const [recentLoaded, setRecentLoaded] = useState(false);
 
   useEffect(() => {
     const loadTypes = async () => {
@@ -40,19 +33,6 @@ function SearchPresenter() {
     };
     loadTypes();
   }, []);
-
-  const fetchRecent = async () => {
-    if (recentLoaded || recentLoading) return;
-    setRecentLoading(true);
-    try {
-      const response = await fetchRecentUrls();
-      setRecentUrls(response.data.recent);
-      setRecentLoaded(true);
-    } catch (err) {
-    } finally {
-      setRecentLoading(false);
-    }
-  };
 
   const handleTypeSelect = (type: string) => {
     setTypes((prev) => (prev.includes(type) ? prev : [...prev, type]));
@@ -174,14 +154,6 @@ function SearchPresenter() {
     } finally {
       setSearching(false);
     }
-  };
-
-  const handleRecentClick = (item: { title?: string; url: string }) => {
-    const queryValue = item.title?.trim() || item.url;
-    if (!queryValue) return;
-    setQuery(queryValue);
-    setShowTypeDropdown(false);
-    handleSearch(queryValue);
   };
 
   const hasPrevious = page > 1;
