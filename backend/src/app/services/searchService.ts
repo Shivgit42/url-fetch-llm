@@ -137,6 +137,145 @@ function extractRelevantParagraph(content: string, query: string): string {
   return bestParagraph.substring(0, 500).trim();
 }
 
+/**
+ * Extracts short keyword-style phrases (1–2 words) from the most relevant
+ * paragraph for use as UI bullet points.
+ */
+function extractRelevantPhrases(
+  content: string,
+  query: string,
+  maxPhrases = 5
+): string[] {
+  const paragraph = extractRelevantParagraph(content, query);
+  if (!paragraph) return [];
+
+  // Basic tokenization – keep word boundaries, drop punctuation
+  const tokens = paragraph
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length > 2);
+
+  if (tokens.length === 0) return [];
+
+  // Very small stopword list to avoid noise; can be extended if needed
+  const stopWords = new Set([
+    "the",
+    "and",
+    "for",
+    "you",
+    "are",
+    "with",
+    "that",
+    "from",
+    "this",
+    "your",
+    "have",
+    "will",
+    "not",
+    "but",
+    "was",
+    "were",
+    "can",
+    "our",
+    "about",
+    "into",
+    "then",
+    "than",
+    "them",
+    "they",
+    "there",
+    "what",
+    "when",
+    "where",
+    "which",
+    "while",
+    "also",
+    "just",
+    "like",
+  ]);
+
+  const queryWords = normalizeForMatching(query)
+    .split(/\s+/)
+    .filter((w) => w.length > 2);
+  const queryWordSet = new Set(queryWords);
+
+  type PhraseInfo = { phrase: string; score: number };
+  const phraseScores = new Map<string, PhraseInfo>();
+
+  // Build candidate 1-word and 2-word phrases
+  for (let i = 0; i < tokens.length; i++) {
+    const w1 = tokens[i];
+    if (stopWords.has(w1)) continue;
+
+    const single = w1;
+
+    const boostFromQuery = queryWordSet.has(single) ? 3 : 1;
+    const baseScore = 1 * boostFromQuery;
+
+    const existingSingle = phraseScores.get(single);
+    if (existingSingle) {
+      existingSingle.score += baseScore;
+    } else {
+      phraseScores.set(single, { phrase: single, score: baseScore });
+    }
+
+    // Two-word phrase
+    if (i + 1 < tokens.length) {
+      const w2 = tokens[i + 1];
+      if (stopWords.has(w2)) continue;
+      const twoWord = `${w1} ${w2}`;
+
+      const inQuery =
+        queryWordSet.has(w1) || queryWordSet.has(w2)
+          ? 4
+          : 1;
+      const twoWordScore = 2 * inQuery;
+
+      const existingTwo = phraseScores.get(twoWord);
+      if (existingTwo) {
+        existingTwo.score += twoWordScore;
+      } else {
+        phraseScores.set(twoWord, { phrase: twoWord, score: twoWordScore });
+      }
+    }
+  }
+
+  // Rank phrases: higher score first, prefer phrases that include a query word
+  const ranked = Array.from(phraseScores.values()).sort(
+    (a, b) => b.score - a.score
+  );
+
+  // Deduplicate while preserving order and ensure each phrase is tied to query
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const item of ranked) {
+    // Enforce very short phrases: max 2 words
+    const words = item.phrase.split(" ");
+    if (words.length === 0 || words.length > 2) {
+      continue;
+    }
+
+    // Require at least one word to be present in the query
+    const hasQueryWord = words.some((w) => queryWordSet.has(w));
+    if (!hasQueryWord) {
+      continue;
+    }
+
+    const phrase = words
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+
+    const key = phrase.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(phrase);
+    if (unique.length >= maxPhrases) break;
+  }
+
+  return unique;
+}
+
 export async function executeSearch(criteria: SearchCriteria) {
   const { query, types, perPage, page, typeFilterText } = criteria;
 
@@ -483,17 +622,19 @@ export async function executeSearch(criteria: SearchCriteria) {
     const resultIds = finalResults.map(r => parseInt(r.id)).filter(id => !isNaN(id));
     const contentMap = await fetchFullContentByIds(resultIds);
 
-    // Replace snippets with relevant paragraphs
+    // Replace snippets with relevant paragraphs and attach short phrases
     const resultsWithRelevantSnippets = finalResults.map(result => {
       const id = parseInt(result.id);
       const fullContent = contentMap.get(id);
       
       if (fullContent) {
         const relevantParagraph = extractRelevantParagraph(fullContent, query);
-        if (relevantParagraph) {
+        const highlights = extractRelevantPhrases(fullContent, query);
+        if (relevantParagraph || (highlights && highlights.length > 0)) {
           return {
             ...result,
-            snippet: relevantParagraph,
+            snippet: relevantParagraph || result.snippet,
+            highlights,
           };
         }
       }
