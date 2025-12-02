@@ -7,6 +7,107 @@ interface SearchResult {
   originalScore?: number;
   recencyBoost?: number;
   snippet?: string;
+  highlights?: string[];
+}
+
+function buildPhrasesFromText(
+  text: string | undefined,
+  maxPhrases: number = 5
+): string[] {
+  if (!text) return [];
+
+  const cleaned = text.replace(/[^a-zA-Z0-9\s]/g, " ").toLowerCase();
+  const tokens = cleaned.split(/\s+/).filter((t) => t.length > 2);
+  if (tokens.length === 0) return [];
+
+  const stopWords = new Set([
+    "the",
+    "and",
+    "for",
+    "you",
+    "are",
+    "with",
+    "that",
+    "from",
+    "this",
+    "your",
+    "have",
+    "will",
+    "not",
+    "but",
+    "was",
+    "were",
+    "can",
+    "our",
+    "about",
+    "into",
+    "then",
+    "than",
+    "them",
+    "they",
+    "there",
+    "what",
+    "when",
+    "where",
+    "which",
+    "while",
+    "also",
+    "just",
+    "like",
+  ]);
+
+  type PhraseInfo = { phrase: string; score: number };
+  const phraseScores = new Map<string, PhraseInfo>();
+
+  for (let i = 0; i < tokens.length; i++) {
+    const w1 = tokens[i];
+    if (stopWords.has(w1)) continue;
+
+    const single = w1;
+    const existingSingle = phraseScores.get(single);
+    if (existingSingle) {
+      existingSingle.score += 1;
+    } else {
+      phraseScores.set(single, { phrase: single, score: 1 });
+    }
+
+    if (i + 1 < tokens.length) {
+      const w2 = tokens[i + 1];
+      if (stopWords.has(w2)) continue;
+      const two = `${w1} ${w2}`;
+      const existingTwo = phraseScores.get(two);
+      if (existingTwo) {
+        existingTwo.score += 2;
+      } else {
+        phraseScores.set(two, { phrase: two, score: 2 });
+      }
+    }
+  }
+
+  const ranked = Array.from(phraseScores.values()).sort(
+    (a, b) => b.score - a.score
+  );
+
+  const seen = new Set<string>();
+  const phrases: string[] = [];
+
+  for (const item of ranked) {
+    const words = item.phrase.split(" ");
+    if (words.length === 0 || words.length > 2) continue;
+
+    const phrase = words
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+
+    const key = phrase.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    phrases.push(phrase);
+
+    if (phrases.length >= maxPhrases) break;
+  }
+
+  return phrases;
 }
 
 interface ResultsSectionProps {
@@ -72,11 +173,25 @@ function ResultsSection({
               </svg>
               {result.url}
             </div>
-            {result.snippet && (
-              <div className="text-slate-700 text-sm mb-4 leading-relaxed p-3 bg-slate-50 rounded-lg border-l-4 border-sky-400/60">
-                {result.snippet}
-              </div>
-            )}
+            {(() => {
+              const phrases =
+                (result.highlights && result.highlights.length > 0
+                  ? result.highlights
+                  : buildPhrasesFromText(result.snippet)
+                ).slice(0, 5);
+
+              if (phrases.length === 0) {
+                return null;
+              }
+
+              return (
+                <ul className="text-slate-700 text-sm mb-4 leading-relaxed p-3 bg-slate-50 rounded-lg border-l-4 border-sky-400/60 list-disc list-inside space-y-1">
+                  {phrases.map((phrase, index) => (
+                    <li key={index}>{phrase}</li>
+                  ))}
+                </ul>
+              );
+            })()}
             <div className="flex items-center gap-4 flex-wrap pt-3 border-t border-slate-200">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-slate-500">
